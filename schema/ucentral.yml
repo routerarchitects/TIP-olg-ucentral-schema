@@ -43,3 +43,5 @@ properties:
   third-party:
     type: object
     additionalProperties: true
+  nat:
+    $ref: "https://ucentral.io/schema/v1/nat/"

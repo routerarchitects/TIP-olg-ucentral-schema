@@ -1,11 +1,8 @@
-# uCentral Schema
+# OLG uCentral Schema
 
 Collection of JSON schemas used by uCentral for validating the data model.
 Rendering of configuration JSON into device-specific output is performed by
 separate flavour-specific renderers.
-
-This software is a part of the OpenWiFi
-[AP NOS](https://github.com/Telecominfraproject/wlan-ap).
 
 ## Building
 

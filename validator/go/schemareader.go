@@ -6097,8 +6097,14 @@ func checkFormat(format string, val string) bool {
 		if parts[0] == "auto" {
 			return true
 		}
-		_, err = netip.ParseAddr(parts[0])
-		return err == nil
+		ip, err := netip.ParseAddr(parts[0])
+		if err != nil {
+			return false
+		}
+		if ip.Is4() && prefix > 32 {
+			return false
+		}
+		return true
 	case "uc-mobility":
 		return ucMobilityRegex.MatchString(val)
 	case "uc-base64":

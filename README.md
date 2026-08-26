@@ -111,5 +111,5 @@ The Go validator implements a custom JSON Schema Draft-07 engine designed specif
 * `uc-base64` (valid base64 encoded data)
 * `uc-fqdn` (Fully Qualified Domain Name, >= 2 labels)
 * `hostname` (RFC 1123 compliant domain labels)
-* `uri` (RFC compliant URI strings, allowing custom protocols and `data:` schemes)
+* `uri` (scheme + authority URLs accepted by the legacy JQ/ucode behavior, plus `data:` schemes)
 

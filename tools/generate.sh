@@ -11,7 +11,7 @@ mkdir -p ./validator/ucode ./validator/bash ./validator/go
 ./generators/ucode/generate-reader.uc > ./validator/ucode/schemareader.uc
 ./generators/bash/generate-bash-reader.uc > ./validator/bash/schemareader.sh
 chmod +x ./validator/bash/schemareader.sh
-go run ./generators/go/generate.go ./ucentral.schema.full.json ./validator/go/schemareader.go
+go run ./generators/go/generate-reader.go ./ucentral.schema.full.json ./validator/go/schemareader.go
 
 mkdir -p docs
 if command -v generate-schema-doc >/dev/null 2>&1; then

@@ -5910,7 +5910,7 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 	if len(s.OneOf) > 0 {
 		matchCount := 0
 		for i, subSchema := range s.OneOf {
-			if len(validateNode(subSchema, v, fmt.Sprintf("%!s(MISSING).oneOf[%!d(MISSING)]", path, i))) == 0 {
+			if len(validateNode(subSchema, v, fmt.Sprintf("%s.oneOf[%d]", path, i))) == 0 {
 				matchCount++
 			}
 		}
@@ -5922,7 +5922,7 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 	if len(s.AnyOf) > 0 {
 		matched := false
 		for i, subSchema := range s.AnyOf {
-			if len(validateNode(subSchema, v, fmt.Sprintf("%!s(MISSING).anyOf[%!d(MISSING)]", path, i))) == 0 {
+			if len(validateNode(subSchema, v, fmt.Sprintf("%s.anyOf[%d]", path, i))) == 0 {
 				matched = true
 				break
 			}

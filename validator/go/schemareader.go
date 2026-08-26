@@ -5713,24 +5713,24 @@ const SchemaJSON = `{
 }`
 
 type Schema struct {
-	Type                 interface{}             `json:"type"`
-	Properties           map[string]*Schema      `json:"properties"`
-	PatternProperties    map[string]*Schema      `json:"patternProperties"`
-	Items                *Schema                 `json:"items"`
-	Required             []string                `json:"required"`
-	Enum                 []interface{}           `json:"enum"`
-	Minimum              *float64                `json:"minimum"`
-	Maximum              *float64                `json:"maximum"`
-	MinLength            *int                    `json:"minLength"`
-	MaxLength            *int                    `json:"maxLength"`
-	MinItems             *int                    `json:"minItems"`
-	MaxItems             *int                    `json:"maxItems"`
-	Format               string                  `json:"format"`
-	Pattern              string                  `json:"pattern"`
-	OneOf                []*Schema               `json:"oneOf"`
-	AnyOf                []*Schema               `json:"anyOf"`
-	AllOf                []*Schema               `json:"allOf"`
-	AdditionalProperties *bool                   `json:"additionalProperties"`
+	Type                 interface{}        `json:"type"`
+	Properties           map[string]*Schema `json:"properties"`
+	PatternProperties    map[string]*Schema `json:"patternProperties"`
+	Items                *Schema            `json:"items"`
+	Required             []string           `json:"required"`
+	Enum                 []interface{}      `json:"enum"`
+	Minimum              *float64           `json:"minimum"`
+	Maximum              *float64           `json:"maximum"`
+	MinLength            *int               `json:"minLength"`
+	MaxLength            *int               `json:"maxLength"`
+	MinItems             *int               `json:"minItems"`
+	MaxItems             *int               `json:"maxItems"`
+	Format               string             `json:"format"`
+	Pattern              string             `json:"pattern"`
+	OneOf                []*Schema          `json:"oneOf"`
+	AnyOf                []*Schema          `json:"anyOf"`
+	AllOf                []*Schema          `json:"allOf"`
+	AdditionalProperties *bool              `json:"additionalProperties"`
 }
 
 var rootSchema *Schema
@@ -5745,7 +5745,9 @@ func init() {
 }
 
 func precompilePatterns(s *Schema) {
-	if s == nil { return }
+	if s == nil {
+		return
+	}
 	if s.Pattern != "" {
 		compiledPatterns[s.Pattern] = regexp.MustCompile(s.Pattern)
 	}
@@ -5771,11 +5773,15 @@ func Validate(configJSON []byte) error {
 }
 
 func validateNode(s *Schema, v interface{}, path string) []string {
-	if s == nil { return nil }
+	if s == nil {
+		return nil
+	}
 	var errs []string
 
 	if v == nil {
-		if s.Type == "null" { return nil }
+		if s.Type == "null" {
+			return nil
+		}
 		return []string{fmt.Sprintf("%s: must not be null", path)}
 	}
 

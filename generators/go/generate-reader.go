@@ -35,6 +35,7 @@ package validator
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/netip"
 	"net/url"
 	"regexp"
@@ -64,6 +65,13 @@ type Schema struct {
 	AnyOf                []*Schema               `+"`json:\"anyOf\"`"+`
 	AllOf                []*Schema               `+"`json:\"allOf\"`"+`
 	AdditionalProperties *bool                   `+"`json:\"additionalProperties\"`"+`
+	Const                interface{}             `+"`json:\"const\"`"+`
+	ExclusiveMinimum     *float64                `+"`json:\"exclusiveMinimum\"`"+`
+	ExclusiveMaximum     *float64                `+"`json:\"exclusiveMaximum\"`"+`
+	MultipleOf           *float64                `+"`json:\"multipleOf\"`"+`
+	MinProperties        *int                    `+"`json:\"minProperties\"`"+`
+	MaxProperties        *int                    `+"`json:\"maxProperties\"`"+`
+	PropertyNames        *Schema                 `+"`json:\"propertyNames\"`"+`
 }
 
 var rootSchema *Schema
@@ -152,12 +160,21 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 
 	// 2. Object validation
 	if obj, ok := v.(map[string]interface{}); ok {
+		if s.MinProperties != nil && len(obj) < *s.MinProperties {
+			errs = append(errs, fmt.Sprintf("%%s: must have at least %%d properties", path, *s.MinProperties))
+		}
+		if s.MaxProperties != nil && len(obj) > *s.MaxProperties {
+			errs = append(errs, fmt.Sprintf("%%s: must have at most %%d properties", path, *s.MaxProperties))
+		}
 		for _, req := range s.Required {
 			if _, exists := obj[req]; !exists {
 				errs = append(errs, fmt.Sprintf("%%s: missing required property '%%s'", path, req))
 			}
 		}
 		for key, val := range obj {
+			if s.PropertyNames != nil {
+				errs = append(errs, validateNode(s.PropertyNames, key, fmt.Sprintf("%%s.%%s(propertyName)", path, key))...)
+			}
 			matched := false
 			if propSchema, exists := s.Properties[key]; exists {
 				errs = append(errs, validateNode(propSchema, val, path+"."+key)...)
@@ -218,6 +235,15 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 		if s.Maximum != nil && num > *s.Maximum {
 			errs = append(errs, fmt.Sprintf("%%s: must be <= %%v", path, *s.Maximum))
 		}
+		if s.ExclusiveMinimum != nil && num <= *s.ExclusiveMinimum {
+			errs = append(errs, fmt.Sprintf("%%s: must be > %%v", path, *s.ExclusiveMinimum))
+		}
+		if s.ExclusiveMaximum != nil && num >= *s.ExclusiveMaximum {
+			errs = append(errs, fmt.Sprintf("%%s: must be < %%v", path, *s.ExclusiveMaximum))
+		}
+		if s.MultipleOf != nil && math.Mod(num, *s.MultipleOf) != 0 {
+			errs = append(errs, fmt.Sprintf("%%s: must be a multiple of %%v", path, *s.MultipleOf))
+		}
 	}
 
 	// 6. Enum validation
@@ -231,6 +257,12 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 		}
 		if !matched {
 			errs = append(errs, fmt.Sprintf("%%s: value not in enum", path))
+		}
+	}
+
+	if s.Const != nil {
+		if fmt.Sprint(s.Const) != fmt.Sprint(v) {
+			errs = append(errs, fmt.Sprintf("%%s: value must match const", path))
 		}
 	}
 
@@ -292,7 +324,7 @@ func checkType(expected string, v interface{}) bool {
 		_, ok := v.([]interface{})
 		return ok
 	default:
-		return true // ignore unknown
+		return false
 	}
 }
 

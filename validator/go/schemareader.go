@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/netip"
+	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -5711,23 +5713,23 @@ const SchemaJSON = `{
 }`
 
 type Schema struct {
-	Type              interface{}        `json:"type"`
-	Properties        map[string]*Schema `json:"properties"`
-	PatternProperties map[string]*Schema `json:"patternProperties"`
-	Items             *Schema            `json:"items"`
-	Required          []string           `json:"required"`
-	Enum              []interface{}      `json:"enum"`
-	Minimum           *float64           `json:"minimum"`
-	Maximum           *float64           `json:"maximum"`
-	MinLength         *int               `json:"minLength"`
-	MaxLength         *int               `json:"maxLength"`
-	MinItems          *int               `json:"minItems"`
-	MaxItems          *int               `json:"maxItems"`
-	Format            string             `json:"format"`
-	Pattern           string             `json:"pattern"`
-	OneOf             []*Schema          `json:"oneOf"`
-	AnyOf             []*Schema          `json:"anyOf"`
-	AllOf             []*Schema          `json:"allOf"`
+	Type                 interface{}             `json:"type"`
+	Properties           map[string]*Schema      `json:"properties"`
+	PatternProperties    map[string]*Schema      `json:"patternProperties"`
+	Items                *Schema                 `json:"items"`
+	Required             []string                `json:"required"`
+	Enum                 []interface{}           `json:"enum"`
+	Minimum              *float64                `json:"minimum"`
+	Maximum              *float64                `json:"maximum"`
+	MinLength            *int                    `json:"minLength"`
+	MaxLength            *int                    `json:"maxLength"`
+	MinItems             *int                    `json:"minItems"`
+	MaxItems             *int                    `json:"maxItems"`
+	Format               string                  `json:"format"`
+	Pattern              string                  `json:"pattern"`
+	OneOf                []*Schema               `json:"oneOf"`
+	AnyOf                []*Schema               `json:"anyOf"`
+	AllOf                []*Schema               `json:"allOf"`
 }
 
 var rootSchema *Schema
@@ -5742,9 +5744,7 @@ func init() {
 }
 
 func precompilePatterns(s *Schema) {
-	if s == nil {
-		return
-	}
+	if s == nil { return }
 	if s.Pattern != "" {
 		compiledPatterns[s.Pattern] = regexp.MustCompile(s.Pattern)
 	}
@@ -5770,15 +5770,11 @@ func Validate(configJSON []byte) error {
 }
 
 func validateNode(s *Schema, v interface{}, path string) []string {
-	if s == nil {
-		return nil
-	}
+	if s == nil { return nil }
 	var errs []string
 
 	if v == nil {
-		if s.Type == "null" {
-			return nil
-		}
+		if s.Type == "null" { return nil }
 		return []string{fmt.Sprintf("%s: must not be null", path)}
 	}
 
@@ -5962,6 +5958,64 @@ func checkFormat(format string, val string) bool {
 		return regexp.MustCompile(`^[0-9]+[smhdw]?$`).MatchString(val)
 	case "uc-portrange":
 		return regexp.MustCompile(`^[0-9]+(-[0-9]+)?$`).MatchString(val)
+	case "uc-cidr4":
+		parts := strings.Split(val, "/")
+		if len(parts) != 2 {
+			return false
+		}
+		prefix, err := strconv.Atoi(parts[1])
+		if err != nil || prefix < 0 || prefix > 32 {
+			return false
+		}
+		if parts[0] == "auto" {
+			return true
+		}
+		ip, err := netip.ParseAddr(parts[0])
+		return err == nil && ip.Is4()
+	case "uc-cidr6":
+		parts := strings.Split(val, "/")
+		if len(parts) != 2 {
+			return false
+		}
+		prefix, err := strconv.Atoi(parts[1])
+		if err != nil || prefix < 0 || prefix > 128 {
+			return false
+		}
+		if parts[0] == "auto" {
+			return true
+		}
+		ip, err := netip.ParseAddr(parts[0])
+		return err == nil && ip.Is6()
+	case "hostname":
+		return regexp.MustCompile("^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])(\\\\.[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])*$").MatchString(val)
+	case "uc-cidr":
+		parts := strings.Split(val, "/")
+		if len(parts) != 2 {
+			return false
+		}
+		prefix, err := strconv.Atoi(parts[1])
+		if err != nil || prefix < 0 || prefix > 128 {
+			return false
+		}
+		if parts[0] == "auto" {
+			return true
+		}
+		_, err = netip.ParseAddr(parts[0])
+		return err == nil
+	case "uc-mobility":
+		return regexp.MustCompile("^([0-9A-Fa-f]{4})$").MatchString(val)
+	case "uc-base64":
+		return regexp.MustCompile("^[a-zA-Z0-9/+]*={0,2}$").MatchString(val)
+	case "uc-fqdn":
+		return regexp.MustCompile("^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])(\\\\.[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])+$").MatchString(val)
+	case "uc-host":
+		if _, err := netip.ParseAddr(val); err == nil {
+			return true
+		}
+		return regexp.MustCompile("^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])(\\\\.[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])*$").MatchString(val)
+	case "uri":
+		u, err := url.Parse(val)
+		return err == nil && u.Scheme != ""
 	}
 	return true
 }

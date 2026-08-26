@@ -63,7 +63,7 @@ The native Go schema evaluator is compiled as a standalone library package that 
 To use the validator, fetch the module:
 
 ```sh
-go get github.com/routerarchitects/TIP-olg-ucentral-schema
+go get github.com/routerarchitects/TIP-olg-ucentral-schema/validator/go
 ```
 
 Then import and call the `Validate()` function:
@@ -77,7 +77,7 @@ import (
 )
 
 func main() {
-	configJSON := []byte(`{"uuid": 123}`) // Invalid config example
+	configJSON := []byte(`{"uuid": "not-an-integer"}`) // Invalid config example (uuid must be an integer)
 	
 	err := validator.Validate(configJSON)
 	if err != nil {

@@ -5730,6 +5730,7 @@ type Schema struct {
 	OneOf                []*Schema               `json:"oneOf"`
 	AnyOf                []*Schema               `json:"anyOf"`
 	AllOf                []*Schema               `json:"allOf"`
+	AdditionalProperties *bool                   `json:"additionalProperties"`
 }
 
 var rootSchema *Schema
@@ -5816,7 +5817,9 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 					matched = true
 				}
 			}
-			_ = matched // strict mode could block unmatched properties here
+			if !matched && s.AdditionalProperties != nil && !*s.AdditionalProperties {
+				errs = append(errs, fmt.Sprintf("%s.%s: additional property is not allowed", path, key))
+			}
 		}
 	}
 

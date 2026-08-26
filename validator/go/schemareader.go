@@ -5736,6 +5736,16 @@ type Schema struct {
 var rootSchema *Schema
 var compiledPatterns map[string]*regexp.Regexp
 
+var (
+	ucMacRegex       = regexp.MustCompile(`^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`)
+	ucTimeoutRegex   = regexp.MustCompile(`^[0-9]+[smhdw]?$`)
+	ucPortRangeRegex = regexp.MustCompile(`^[0-9]+(-[0-9]+)?$`)
+	hostnameRegex    = regexp.MustCompile("^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])(\\\\.[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])*$")
+	ucMobilityRegex  = regexp.MustCompile("^([0-9A-Fa-f]{4})$")
+	ucBase64Regex    = regexp.MustCompile("^[a-zA-Z0-9/+]*={0,2}$")
+	ucFqdnRegex      = regexp.MustCompile("^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])(\\\\.[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])+$")
+)
+
 func init() {
 	if err := json.Unmarshal([]byte(SchemaJSON), &rootSchema); err != nil {
 		panic(fmt.Sprintf("failed to load embedded schema: %v", err))
@@ -5756,6 +5766,15 @@ func precompilePatterns(s *Schema) {
 		precompilePatterns(v)
 	}
 	for _, v := range s.Properties {
+		precompilePatterns(v)
+	}
+	for _, v := range s.OneOf {
+		precompilePatterns(v)
+	}
+	for _, v := range s.AnyOf {
+		precompilePatterns(v)
+	}
+	for _, v := range s.AllOf {
 		precompilePatterns(v)
 	}
 	precompilePatterns(s.Items)
@@ -5962,11 +5981,11 @@ func checkFormat(format string, val string) bool {
 		_, err := netip.ParseAddr(val)
 		return err == nil
 	case "uc-mac":
-		return regexp.MustCompile(`^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`).MatchString(val)
+		return ucMacRegex.MatchString(val)
 	case "uc-timeout":
-		return regexp.MustCompile(`^[0-9]+[smhdw]?$`).MatchString(val)
+		return ucTimeoutRegex.MatchString(val)
 	case "uc-portrange":
-		return regexp.MustCompile(`^[0-9]+(-[0-9]+)?$`).MatchString(val)
+		return ucPortRangeRegex.MatchString(val)
 	case "uc-cidr4":
 		parts := strings.Split(val, "/")
 		if len(parts) != 2 {
@@ -5996,7 +6015,7 @@ func checkFormat(format string, val string) bool {
 		ip, err := netip.ParseAddr(parts[0])
 		return err == nil && ip.Is6()
 	case "hostname":
-		return regexp.MustCompile("^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])(\\\\.[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])*$").MatchString(val)
+		return hostnameRegex.MatchString(val)
 	case "uc-cidr":
 		parts := strings.Split(val, "/")
 		if len(parts) != 2 {
@@ -6012,16 +6031,16 @@ func checkFormat(format string, val string) bool {
 		_, err = netip.ParseAddr(parts[0])
 		return err == nil
 	case "uc-mobility":
-		return regexp.MustCompile("^([0-9A-Fa-f]{4})$").MatchString(val)
+		return ucMobilityRegex.MatchString(val)
 	case "uc-base64":
-		return regexp.MustCompile("^[a-zA-Z0-9/+]*={0,2}$").MatchString(val)
+		return ucBase64Regex.MatchString(val)
 	case "uc-fqdn":
-		return regexp.MustCompile("^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])(\\\\.[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])+$").MatchString(val)
+		return ucFqdnRegex.MatchString(val)
 	case "uc-host":
 		if _, err := netip.ParseAddr(val); err == nil {
 			return true
 		}
-		return regexp.MustCompile("^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])(\\\\.[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])*$").MatchString(val)
+		return hostnameRegex.MatchString(val)
 	case "uri":
 		u, err := url.Parse(val)
 		return err == nil && u.Scheme != ""

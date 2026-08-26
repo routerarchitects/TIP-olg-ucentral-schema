@@ -87,3 +87,29 @@ func main() {
 ```
 
 > **Note:** The exact text of the validation errors may change across versions. They are intended for human-readable logging and should not be parsed programmatically.
+
+### Parity & Supported Keywords
+
+The Go validator implements a custom JSON Schema Draft-07 engine designed specifically for the uCentral schema. It provides 100% semantic validation parity with the legacy Bash (`schemareader.sh`) and ucode (`schemareader.uc`) validators, resolving all `$ref` pointers at generation time rather than at runtime to ensure high performance.
+
+#### Supported JSON Schema Keywords:
+* **Types**: `type` (strict validation for `string`, `integer`, `number`, `boolean`, `object`, `array`, `null`)
+* **Objects**: `properties`, `patternProperties`, `required`, `additionalProperties` (boolean `false`/`true`), `minProperties`, `maxProperties`, `propertyNames`
+* **Arrays**: `items`, `minItems`, `maxItems`
+* **Strings**: `minLength`, `maxLength`, `pattern` (regular expressions), `format` (see custom formats below)
+* **Numbers**: `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`
+* **Composed**: `oneOf`, `anyOf`, `allOf`
+* **Values**: `enum`, `const`
+
+#### Supported Custom Formats (`format`):
+* `ipv4`, `ipv6`, `uc-ip`, `uc-host` (IP or Hostname)
+* `uc-mac` (MAC address)
+* `uc-timeout` (timeout with unit suffix: `s`, `m`, `h`, `d`, `w`)
+* `uc-portrange` (port range, e.g. `80-443`, verifying bounds <= 65535 and `max >= min`)
+* `uc-cidr`, `uc-cidr4`, `uc-cidr6` (standard subnet format, also allowing the `"auto"` prefix)
+* `uc-mobility` (4-character hex code)
+* `uc-base64` (valid base64 encoded data)
+* `uc-fqdn` (Fully Qualified Domain Name, >= 2 labels)
+* `hostname` (RFC 1123 compliant domain labels)
+* `uri` (RFC compliant URI strings, allowing custom protocols and `data:` schemes)
+

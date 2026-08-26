@@ -58,6 +58,9 @@ type Schema struct {
 	MaxItems             *int                    `+"`json:\"maxItems\"`"+`
 	Format               string                  `+"`json:\"format\"`"+`
 	Pattern              string                  `+"`json:\"pattern\"`"+`
+	OneOf                []*Schema               `+"`json:\"oneOf\"`"+`
+	AnyOf                []*Schema               `+"`json:\"anyOf\"`"+`
+	AllOf                []*Schema               `+"`json:\"allOf\"`"+`
 }
 
 var rootSchema *Schema
@@ -204,6 +207,40 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 		}
 		if !matched {
 			errs = append(errs, fmt.Sprintf("%%s: value not in enum", path))
+		}
+	}
+
+	if len(s.OneOf) > 0 {
+		matchCount := 0
+		for i, subSchema := range s.OneOf {
+			if len(validateNode(subSchema, v, fmt.Sprintf("%s.oneOf[%d]", path, i))) == 0 {
+				matchCount++
+			}
+		}
+		if matchCount != 1 {
+			errs = append(errs, fmt.Sprintf("%%s: must match exactly one schema in oneOf", path))
+		}
+	}
+
+	if len(s.AnyOf) > 0 {
+		matched := false
+		for i, subSchema := range s.AnyOf {
+			if len(validateNode(subSchema, v, fmt.Sprintf("%s.anyOf[%d]", path, i))) == 0 {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			errs = append(errs, fmt.Sprintf("%%s: must match at least one schema in anyOf", path))
+		}
+	}
+
+	if len(s.AllOf) > 0 {
+		for _, subSchema := range s.AllOf {
+			subErrs := validateNode(subSchema, v, path)
+			if len(subErrs) > 0 {
+				errs = append(errs, subErrs...)
+			}
 		}
 	}
 

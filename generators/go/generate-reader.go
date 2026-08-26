@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"go/format"
 	"log"
 	"os"
 	"path/filepath"
@@ -33,11 +34,11 @@ func main() {
 package validator
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
 	"net/netip"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -78,14 +79,34 @@ var rootSchema *Schema
 var compiledPatterns map[string]*regexp.Regexp
 
 var (
-	ucMacRegex      = regexp.MustCompile(`+"`^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`"+`)
-	ucTimeoutRegex  = regexp.MustCompile(`+"`^[0-9]+[smhdw]?$`"+`)
-	ucPortRangeRegex = regexp.MustCompile(`+"`^[0-9]+(-[0-9]+)?$`"+`)
-	hostnameRegex   = regexp.MustCompile("^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])(\\\\.[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])*$")
-	ucMobilityRegex = regexp.MustCompile("^([0-9A-Fa-f]{4})$")
-	ucBase64Regex   = regexp.MustCompile("^[a-zA-Z0-9/+]*={0,2}$")
-	ucFqdnRegex     = regexp.MustCompile("^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])(\\\\.[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\\\-]{0,61}[a-zA-Z0-9])+$")
+	ucMacRegex       = regexp.MustCompile(`+"`^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`"+`)
+	ucTimeoutRegex   = regexp.MustCompile(`+"`^[0-9]+[smhdw]$`"+`)
+	ucPortRangeRegex = regexp.MustCompile(`+"`^([0-9]|[1-9][0-9]*)(-([0-9]|[1-9][0-9]*))?$`"+`)
+	strictLabelRegex = regexp.MustCompile(`+"`^([a-zA-Z0-9]{1,2}|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])$`"+`)
+	looseLabelRegex  = regexp.MustCompile(`+"`^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])$`"+`)
+	ucMobilityRegex  = regexp.MustCompile("^([0-9A-Fa-f]{4})$")
+	uriRegex         = regexp.MustCompile(`+"`^[a-z+-]+://([^/]+).*$`"+`)
 )
+
+func isValidHostname(value string, minLabels int, strict bool) bool {
+	if len(value) > 255 {
+		return false
+	}
+	labels := strings.Split(value, ".")
+	if len(labels) < minLabels {
+		return false
+	}
+	r := looseLabelRegex
+	if strict {
+		r = strictLabelRegex
+	}
+	for _, label := range labels {
+		if !r.MatchString(label) {
+			return false
+		}
+	}
+	return true
+}
 
 func init() {
 	if err := json.Unmarshal([]byte(SchemaJSON), &rootSchema); err != nil {
@@ -344,7 +365,22 @@ func checkFormat(format string, val string) bool {
 	case "uc-timeout":
 		return ucTimeoutRegex.MatchString(val)
 	case "uc-portrange":
-		return ucPortRangeRegex.MatchString(val)
+		matches := ucPortRangeRegex.FindStringSubmatch(val)
+		if matches == nil {
+			return false
+		}
+		min, err := strconv.Atoi(matches[1])
+		if err != nil || min > 65535 {
+			return false
+		}
+		max := min
+		if matches[3] != "" {
+			max, err = strconv.Atoi(matches[3])
+			if err != nil || max > 65535 {
+				return false
+			}
+		}
+		return max >= min
 	case "uc-cidr4":
 		parts := strings.Split(val, "/")
 		if len(parts) != 2 {
@@ -374,7 +410,7 @@ func checkFormat(format string, val string) bool {
 		ip, err := netip.ParseAddr(parts[0])
 		return err == nil && ip.Is6()
 	case "hostname":
-		return hostnameRegex.MatchString(val)
+		return isValidHostname(val, 1, true)
 	case "uc-cidr":
 		parts := strings.Split(val, "/")
 		if len(parts) != 2 {
@@ -392,23 +428,45 @@ func checkFormat(format string, val string) bool {
 	case "uc-mobility":
 		return ucMobilityRegex.MatchString(val)
 	case "uc-base64":
-		return ucBase64Regex.MatchString(val)
+		if _, err := base64.StdEncoding.DecodeString(val); err == nil {
+			return true
+		}
+		if _, err := base64.RawStdEncoding.DecodeString(val); err == nil {
+			return true
+		}
+		return false
 	case "uc-fqdn":
-		return ucFqdnRegex.MatchString(val)
+		return isValidHostname(val, 2, true)
 	case "uc-host":
 		if _, err := netip.ParseAddr(val); err == nil {
 			return true
 		}
-		return hostnameRegex.MatchString(val)
+		return isValidHostname(val, 1, false)
 	case "uri":
-		u, err := url.Parse(val)
-		return err == nil && u.Scheme != ""
+		if strings.HasPrefix(val, "data:") {
+			return true
+		}
+		matches := uriRegex.FindStringSubmatch(val)
+		if matches == nil {
+			return false
+		}
+		host := matches[1]
+		if _, err := netip.ParseAddr(host); err == nil {
+			return true
+		}
+		return isValidHostname(host, 1, false)
 	}
 	return true
 }
 `, schemaString)
 
-	if err := os.WriteFile(outputFile, []byte(goCode), 0644); err != nil {
+	formattedCode, err := format.Source([]byte(goCode))
+	if err != nil {
+		log.Printf("Warning: failed to format generated code (writing unformatted): %v", err)
+		formattedCode = []byte(goCode)
+	}
+
+	if err := os.WriteFile(outputFile, formattedCode, 0644); err != nil {
 		log.Fatalf("Failed to write output file: %v", err)
 	}
 

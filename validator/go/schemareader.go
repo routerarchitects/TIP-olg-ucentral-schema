@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
+	"net/url"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -5943,7 +5945,7 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 	if len(s.Enum) > 0 {
 		matched := false
 		for _, e := range s.Enum {
-			if fmt.Sprint(e) == fmt.Sprint(v) { // lazy comparison
+			if reflect.DeepEqual(e, v) {
 				matched = true
 				break
 			}
@@ -5954,7 +5956,7 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 	}
 
 	if s.Const != nil {
-		if fmt.Sprint(s.Const) != fmt.Sprint(v) {
+		if !reflect.DeepEqual(s.Const, v) {
 			errs = append(errs, fmt.Sprintf("%s: value must match const", path))
 		}
 	}
@@ -6118,11 +6120,14 @@ func checkFormat(format string, val string) bool {
 		if strings.HasPrefix(val, "data:") {
 			return true
 		}
-		matches := uriRegex.FindStringSubmatch(val)
-		if matches == nil {
+		if !uriRegex.MatchString(val) {
 			return false
 		}
-		host := matches[1]
+		u, err := url.Parse(val)
+		if err != nil || u.Scheme == "" {
+			return false
+		}
+		host := u.Hostname()
 		if _, err := netip.ParseAddr(host); err == nil {
 			return true
 		}

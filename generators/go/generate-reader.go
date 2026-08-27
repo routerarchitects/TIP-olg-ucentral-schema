@@ -37,46 +37,69 @@ func main() {
 		"uc-fqdn": true, "uc-host": true, "uri": true,
 	}
 
-	var validateSchema func(node interface{}, path string)
-	validateSchema = func(node interface{}, path string) {
+	allowedKeywords := map[string]bool{
+		"type": true, "properties": true, "patternProperties": true, "items": true,
+		"required": true, "enum": true, "minimum": true, "maximum": true,
+		"minLength": true, "maxLength": true, "minItems": true, "maxItems": true,
+		"format": true, "pattern": true, "oneOf": true, "anyOf": true,
+		"allOf": true, "additionalProperties": true, "const": true,
+		"exclusiveMinimum": true, "exclusiveMaximum": true, "multipleOf": true,
+		"minProperties": true, "maxProperties": true, "propertyNames": true,
+		// Metadata and JSON Schema boilerplate
+		"title": true, "description": true, "decription": true, "default": true, "examples": true, "example": true,
+		"readOnly": true, "writeOnly": true, "$schema": true, "$id": true,
+		"$$target": true, "definitions": true, "$defs": true,
+	}
+
+	var validateSchema func(node interface{}, path string, isSchema bool)
+	validateSchema = func(node interface{}, path string, isSchema bool) {
 		switch n := node.(type) {
 		case map[string]interface{}:
 			for k, v := range n {
-				if k == "$ref" {
-					log.Fatalf("Error: JSON Schema contains unresolved reference %q at %s. Go generator requires fully dereferenced schemas.", v, path)
-				}
-				if k == "format" {
-					if formatStr, ok := v.(string); ok {
-						if !supportedFormats[formatStr] {
-							log.Fatalf("Error: JSON Schema contains unsupported format %q at %s. Please implement it in generate-reader.go.", formatStr, path)
+				if isSchema {
+					if !allowedKeywords[k] {
+						log.Fatalf("Error: JSON Schema contains unsupported keyword %q at %s. Please implement it or add to allowlist.", k, path)
+					}
+					if k == "$ref" {
+						log.Fatalf("Error: JSON Schema contains unresolved reference %q at %s. Go generator requires fully dereferenced schemas.", v, path)
+					}
+					if k == "format" {
+						if formatStr, ok := v.(string); ok {
+							if !supportedFormats[formatStr] {
+								log.Fatalf("Error: JSON Schema contains unsupported format %q at %s. Please implement it in generate-reader.go.", formatStr, path)
+							}
 						}
 					}
-				}
-				if k == "pattern" {
-					if patStr, ok := v.(string); ok {
-						if _, err := regexp.Compile(patStr); err != nil {
-							log.Fatalf("Error: JSON Schema pattern %q at %s is not valid Go RE2 syntax: %v", patStr, path, err)
+					if k == "pattern" {
+						if patStr, ok := v.(string); ok {
+							if _, err := regexp.Compile(patStr); err != nil {
+								log.Fatalf("Error: JSON Schema pattern %q at %s is not valid Go RE2 syntax: %v", patStr, path, err)
+							}
 						}
 					}
-				}
-				if k == "patternProperties" {
-					if patProps, ok := v.(map[string]interface{}); ok {
-						for pat := range patProps {
-							if _, err := regexp.Compile(pat); err != nil {
-								log.Fatalf("Error: JSON Schema patternProperty %q at %s is not valid Go RE2 syntax: %v", pat, path, err)
+					if k == "patternProperties" {
+						if patProps, ok := v.(map[string]interface{}); ok {
+							for pat := range patProps {
+								if _, err := regexp.Compile(pat); err != nil {
+									log.Fatalf("Error: JSON Schema patternProperty %q at %s is not valid Go RE2 syntax: %v", pat, path, err)
+								}
 							}
 						}
 					}
 				}
-				validateSchema(v, path+"."+k)
+				nextIsSchema := true
+				if k == "properties" || k == "patternProperties" || k == "definitions" || k == "$defs" || k == "default" || k == "examples" || k == "enum" || k == "const" {
+					nextIsSchema = false
+				}
+				validateSchema(v, path+"."+k, nextIsSchema)
 			}
 		case []interface{}:
 			for i, v := range n {
-				validateSchema(v, fmt.Sprintf("%s[%d]", path, i))
+				validateSchema(v, fmt.Sprintf("%s[%d]", path, i), isSchema)
 			}
 		}
 	}
-	validateSchema(parsedSchema, "$")
+	validateSchema(parsedSchema, "$", true)
 
 	// Escape backticks in the JSON payload so we can embed it inside a raw string literal
 	schemaString := bytes.ReplaceAll(schemaBytes, []byte("`"), []byte("`+\"`\"+`"))
@@ -450,10 +473,10 @@ func checkType(expected string, v interface{}) bool {
 				return true
 			}
 			f, err := jn.Float64()
-			return err == nil && f == float64(int64(f))
+			return err == nil && !math.IsNaN(f) && !math.IsInf(f, 0) && f == math.Trunc(f)
 		}
 		f, ok := v.(float64)
-		return ok && f == float64(int64(f))
+		return ok && !math.IsNaN(f) && !math.IsInf(f, 0) && f == math.Trunc(f)
 	case "boolean":
 		_, ok := v.(bool)
 		return ok

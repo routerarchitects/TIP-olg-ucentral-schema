@@ -6064,10 +6064,10 @@ func checkType(expected string, v interface{}) bool {
 				return true
 			}
 			f, err := jn.Float64()
-			return err == nil && f == float64(int64(f))
+			return err == nil && !math.IsNaN(f) && !math.IsInf(f, 0) && f == math.Trunc(f)
 		}
 		f, ok := v.(float64)
-		return ok && f == float64(int64(f))
+		return ok && !math.IsNaN(f) && !math.IsInf(f, 0) && f == math.Trunc(f)
 	case "boolean":
 		_, ok := v.(bool)
 		return ok

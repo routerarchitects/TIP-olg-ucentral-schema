@@ -147,6 +147,7 @@ var (
 	looseLabelRegex  = regexp.MustCompile(`+"`^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])$`"+`)
 	ucMobilityRegex  = regexp.MustCompile("^([0-9A-Fa-f]{4})$")
 	uriRegex         = regexp.MustCompile(`+"`^[a-z+-]+://([^/]+).*$`"+`)
+	ipv4Regex        = regexp.MustCompile(`+"`^([0-9]{1,3}\\.){3}[0-9]{1,3}$`"+`)
 )
 
 func isValidHostname(value string, minLabels int, strict bool) bool {
@@ -163,6 +164,23 @@ func isValidHostname(value string, minLabels int, strict bool) bool {
 	}
 	for _, label := range labels {
 		if !r.MatchString(label) {
+			return false
+		}
+	}
+	return true
+}
+
+func isValidIPv4(val string) bool {
+	if !ipv4Regex.MatchString(val) {
+		return false
+	}
+	parts := strings.Split(val, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, part := range parts {
+		num, err := strconv.Atoi(part)
+		if err != nil || num < 0 || num > 255 {
 			return false
 		}
 	}
@@ -399,8 +417,9 @@ func checkType(expected string, v interface{}) bool {
 		_, ok := v.(string)
 		return ok
 	case "number":
-		if _, ok := v.(json.Number); ok {
-			return true
+		if jn, ok := v.(json.Number); ok {
+			_, err := jn.Float64()
+			return err == nil
 		}
 		_, ok := v.(float64)
 		return ok
@@ -434,14 +453,16 @@ func checkType(expected string, v interface{}) bool {
 func checkFormat(format string, val string) bool {
 	switch format {
 	case "ipv4":
-		ip, err := netip.ParseAddr(val)
-		return err == nil && ip.Is4()
+		return isValidIPv4(val)
 	case "ipv6":
 		ip, err := netip.ParseAddr(val)
 		return err == nil && ip.Is6()
 	case "uc-ip":
-		_, err := netip.ParseAddr(val)
-		return err == nil
+		if isValidIPv4(val) {
+			return true
+		}
+		ip, err := netip.ParseAddr(val)
+		return err == nil && ip.Is6()
 	case "uc-mac":
 		return ucMacRegex.MatchString(val)
 	case "uc-timeout":
@@ -475,8 +496,7 @@ func checkFormat(format string, val string) bool {
 		if parts[0] == "auto" {
 			return true
 		}
-		ip, err := netip.ParseAddr(parts[0])
-		return err == nil && ip.Is4()
+		return isValidIPv4(parts[0])
 	case "uc-cidr6":
 		parts := strings.Split(val, "/")
 		if len(parts) != 2 {
@@ -505,14 +525,11 @@ func checkFormat(format string, val string) bool {
 		if parts[0] == "auto" {
 			return prefix >= 0 && prefix <= 128
 		}
-		ip, err := netip.ParseAddr(parts[0])
-		if err != nil {
-			return false
-		}
-		if ip.Is4() {
+		if isValidIPv4(parts[0]) {
 			return prefix >= 0 && prefix <= 32
 		}
-		if ip.Is6() {
+		ip, err := netip.ParseAddr(parts[0])
+		if err == nil && ip.Is6() {
 			return prefix >= 0 && prefix <= 128
 		}
 		return false
@@ -529,7 +546,11 @@ func checkFormat(format string, val string) bool {
 	case "uc-fqdn":
 		return isValidHostname(val, 2, true)
 	case "uc-host":
-		if _, err := netip.ParseAddr(val); err == nil {
+		if isValidIPv4(val) {
+			return true
+		}
+		ip, err := netip.ParseAddr(val)
+		if err == nil && ip.Is6() {
 			return true
 		}
 		return isValidHostname(val, 1, false)
@@ -542,7 +563,11 @@ func checkFormat(format string, val string) bool {
 			return false
 		}
 		host := matches[1]
-		if _, err := netip.ParseAddr(host); err == nil {
+		if isValidIPv4(host) {
+			return true
+		}
+		ip, err := netip.ParseAddr(host)
+		if err == nil && ip.Is6() {
 			return true
 		}
 		return isValidHostname(host, 1, false)

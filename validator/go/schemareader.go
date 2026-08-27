@@ -2,12 +2,12 @@
 package validator
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
 	"net/netip"
-	"net/url"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -5767,7 +5767,7 @@ var rootSchema *Schema
 var compiledPatterns map[string]*regexp.Regexp
 
 var (
-	ucMacRegex       = regexp.MustCompile(`^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`)
+	ucMacRegex       = regexp.MustCompile(`^([0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})$`)
 	ucTimeoutRegex   = regexp.MustCompile(`^[0-9]+[smhdw]$`)
 	ucPortRangeRegex = regexp.MustCompile(`^([0-9]|[1-9][0-9]*)(-([0-9]|[1-9][0-9]*))?$`)
 	strictLabelRegex = regexp.MustCompile(`^([a-zA-Z0-9]{1,2}|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])$`)
@@ -5797,7 +5797,9 @@ func isValidHostname(value string, minLabels int, strict bool) bool {
 }
 
 func init() {
-	if err := json.Unmarshal([]byte(SchemaJSON), &rootSchema); err != nil {
+	d := json.NewDecoder(strings.NewReader(SchemaJSON))
+	d.UseNumber()
+	if err := d.Decode(&rootSchema); err != nil {
 		panic(fmt.Sprintf("failed to load embedded schema: %v", err))
 	}
 	compiledPatterns = make(map[string]*regexp.Regexp)
@@ -5828,11 +5830,14 @@ func precompilePatterns(s *Schema) {
 		precompilePatterns(v)
 	}
 	precompilePatterns(s.Items)
+	precompilePatterns(s.PropertyNames)
 }
 
 func Validate(configJSON []byte) error {
 	var v interface{}
-	if err := json.Unmarshal(configJSON, &v); err != nil {
+	d := json.NewDecoder(bytes.NewReader(configJSON))
+	d.UseNumber()
+	if err := d.Decode(&v); err != nil {
 		return fmt.Errorf("invalid json payload: %w", err)
 	}
 	if errs := validateNode(rootSchema, v, "$"); len(errs) > 0 {
@@ -5940,7 +5945,7 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 	}
 
 	// 5. Number validation
-	if num, ok := v.(float64); ok {
+	if num, ok := getFloat64(v); ok {
 		if s.Minimum != nil && num < *s.Minimum {
 			errs = append(errs, fmt.Sprintf("%s: must be >= %v", path, *s.Minimum))
 		}
@@ -5962,7 +5967,7 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 	if len(s.Enum) > 0 {
 		matched := false
 		for _, e := range s.Enum {
-			if reflect.DeepEqual(e, v) {
+			if isEqual(e, v) {
 				matched = true
 				break
 			}
@@ -5973,7 +5978,7 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 	}
 
 	if s.HasConst {
-		if !reflect.DeepEqual(s.Const, v) {
+		if !isEqual(s.Const, v) {
 			errs = append(errs, fmt.Sprintf("%s: value must match const", path))
 		}
 	}
@@ -6021,9 +6026,20 @@ func checkType(expected string, v interface{}) bool {
 		_, ok := v.(string)
 		return ok
 	case "number":
+		if _, ok := v.(json.Number); ok {
+			return true
+		}
 		_, ok := v.(float64)
 		return ok
 	case "integer":
+		if jn, ok := v.(json.Number); ok {
+			_, err := jn.Int64()
+			if err == nil {
+				return true
+			}
+			f, err := jn.Float64()
+			return err == nil && f == float64(int64(f))
+		}
 		f, ok := v.(float64)
 		return ok && f == float64(int64(f))
 	case "boolean":
@@ -6110,20 +6126,23 @@ func checkFormat(format string, val string) bool {
 			return false
 		}
 		prefix, err := strconv.Atoi(parts[1])
-		if err != nil || prefix < 0 || prefix > 128 {
+		if err != nil {
 			return false
 		}
 		if parts[0] == "auto" {
-			return true
+			return prefix >= 0 && prefix <= 128
 		}
 		ip, err := netip.ParseAddr(parts[0])
 		if err != nil {
 			return false
 		}
-		if ip.Is4() && prefix > 32 {
-			return false
+		if ip.Is4() {
+			return prefix >= 0 && prefix <= 32
 		}
-		return true
+		if ip.Is6() {
+			return prefix >= 0 && prefix <= 128
+		}
+		return false
 	case "uc-mobility":
 		return ucMobilityRegex.MatchString(val)
 	case "uc-base64":
@@ -6145,18 +6164,65 @@ func checkFormat(format string, val string) bool {
 		if strings.HasPrefix(val, "data:") {
 			return true
 		}
-		if !uriRegex.MatchString(val) {
+		matches := uriRegex.FindStringSubmatch(val)
+		if matches == nil {
 			return false
 		}
-		u, err := url.Parse(val)
-		if err != nil || u.Scheme == "" {
-			return false
-		}
-		host := u.Hostname()
+		host := matches[1]
 		if _, err := netip.ParseAddr(host); err == nil {
 			return true
 		}
 		return isValidHostname(host, 1, false)
 	}
 	return true
+}
+
+func getFloat64(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	}
+	return 0, false
+}
+
+func isEqual(a, b interface{}) bool {
+	if reflect.DeepEqual(a, b) {
+		return true
+	}
+	if fa, ok := getFloat64(a); ok {
+		if fb, ok := getFloat64(b); ok {
+			return fa == fb
+		}
+	}
+	if sa, ok := a.([]interface{}); ok {
+		if sb, ok := b.([]interface{}); ok {
+			if len(sa) != len(sb) {
+				return false
+			}
+			for i := range sa {
+				if !isEqual(sa[i], sb[i]) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	if ma, ok := a.(map[string]interface{}); ok {
+		if mb, ok := b.(map[string]interface{}); ok {
+			if len(ma) != len(mb) {
+				return false
+			}
+			for k, va := range ma {
+				vb, ok := mb[k]
+				if !ok || !isEqual(va, vb) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return false
 }

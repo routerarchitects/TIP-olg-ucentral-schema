@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // SchemaJSON contains the fully resolved uCentral JSON schema
@@ -5846,13 +5847,6 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 	}
 	var errs []string
 
-	if v == nil {
-		if allowsNull(s.Type) {
-			return nil
-		}
-		return []string{fmt.Sprintf("%s: must not be null", path)}
-	}
-
 	// 1. Type validation
 	if s.Type != nil {
 		validType := false
@@ -5868,6 +5862,9 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 			}
 		}
 		if !validType {
+			if v == nil {
+				return []string{fmt.Sprintf("%s: must not be null", path)}
+			}
 			return []string{fmt.Sprintf("%s: invalid type", path)}
 		}
 	}
@@ -5923,10 +5920,11 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 
 	// 4. String validation
 	if str, ok := v.(string); ok {
-		if s.MinLength != nil && len(str) < *s.MinLength {
+		runeCount := utf8.RuneCountInString(str)
+		if s.MinLength != nil && runeCount < *s.MinLength {
 			errs = append(errs, fmt.Sprintf("%s: length must be >= %d", path, *s.MinLength))
 		}
-		if s.MaxLength != nil && len(str) > *s.MaxLength {
+		if s.MaxLength != nil && runeCount > *s.MaxLength {
 			errs = append(errs, fmt.Sprintf("%s: length must be <= %d", path, *s.MaxLength))
 		}
 		if s.Pattern != "" {
@@ -6037,6 +6035,8 @@ func checkType(expected string, v interface{}) bool {
 	case "array":
 		_, ok := v.([]interface{})
 		return ok
+	case "null":
+		return v == nil
 	default:
 		return false
 	}
@@ -6159,21 +6159,4 @@ func checkFormat(format string, val string) bool {
 		return isValidHostname(host, 1, false)
 	}
 	return true
-}
-
-func allowsNull(expected interface{}) bool {
-	if expected == nil {
-		return true
-	}
-	switch t := expected.(type) {
-	case string:
-		return t == "null"
-	case []interface{}:
-		for _, allowed := range t {
-			if allowed == "null" {
-				return true
-			}
-		}
-	}
-	return false
 }

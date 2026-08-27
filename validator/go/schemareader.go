@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/netip"
 	"reflect"
@@ -5839,6 +5840,10 @@ func Validate(configJSON []byte) error {
 	d.UseNumber()
 	if err := d.Decode(&v); err != nil {
 		return fmt.Errorf("invalid json payload: %w", err)
+	}
+	var extra interface{}
+	if err := d.Decode(&extra); err != io.EOF {
+		return fmt.Errorf("invalid json payload: trailing data")
 	}
 	if errs := validateNode(rootSchema, v, "$"); len(errs) > 0 {
 		return fmt.Errorf("validation failed: %s", strings.Join(errs, "; "))

@@ -5741,6 +5741,25 @@ type Schema struct {
 	MinProperties        *int               `json:"minProperties"`
 	MaxProperties        *int               `json:"maxProperties"`
 	PropertyNames        *Schema            `json:"propertyNames"`
+	HasConst             bool               `json:"-"`
+}
+
+type rawSchema Schema
+
+func (s *Schema) UnmarshalJSON(data []byte) error {
+	var rs rawSchema
+	if err := json.Unmarshal(data, &rs); err != nil {
+		return err
+	}
+	*s = Schema(rs)
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err == nil {
+		if _, exists := raw["const"]; exists {
+			s.HasConst = true
+		}
+	}
+	return nil
 }
 
 var rootSchema *Schema
@@ -5828,7 +5847,7 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 	var errs []string
 
 	if v == nil {
-		if s.Type == "null" {
+		if allowsNull(s.Type) {
 			return nil
 		}
 		return []string{fmt.Sprintf("%s: must not be null", path)}
@@ -5955,7 +5974,7 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 		}
 	}
 
-	if s.Const != nil {
+	if s.HasConst {
 		if !reflect.DeepEqual(s.Const, v) {
 			errs = append(errs, fmt.Sprintf("%s: value must match const", path))
 		}
@@ -6140,4 +6159,21 @@ func checkFormat(format string, val string) bool {
 		return isValidHostname(host, 1, false)
 	}
 	return true
+}
+
+func allowsNull(expected interface{}) bool {
+	if expected == nil {
+		return true
+	}
+	switch t := expected.(type) {
+	case string:
+		return t == "null"
+	case []interface{}:
+		for _, allowed := range t {
+			if allowed == "null" {
+				return true
+			}
+		}
+	}
+	return false
 }

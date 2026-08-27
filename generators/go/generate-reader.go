@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"go/format"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 )
 
 func main() {
@@ -21,6 +23,43 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to read schema file: %v", err)
 	}
+
+	// Validate all patterns inside the schema at generation time to catch Go RE2 incompatibilities
+	var parsedSchema interface{}
+	if err := json.Unmarshal(schemaBytes, &parsedSchema); err != nil {
+		log.Fatalf("Failed to parse schema for pattern validation: %v", err)
+	}
+
+	var checkPatterns func(node interface{}, path string)
+	checkPatterns = func(node interface{}, path string) {
+		switch n := node.(type) {
+		case map[string]interface{}:
+			for k, v := range n {
+				if k == "pattern" {
+					if patStr, ok := v.(string); ok {
+						if _, err := regexp.Compile(patStr); err != nil {
+							log.Fatalf("Error: JSON Schema pattern %q at %s is not valid Go RE2 syntax: %v", patStr, path, err)
+						}
+					}
+				}
+				if k == "patternProperties" {
+					if patProps, ok := v.(map[string]interface{}); ok {
+						for pat := range patProps {
+							if _, err := regexp.Compile(pat); err != nil {
+								log.Fatalf("Error: JSON Schema patternProperty %q at %s is not valid Go RE2 syntax: %v", pat, path, err)
+							}
+						}
+					}
+				}
+				checkPatterns(v, path+"."+k)
+			}
+		case []interface{}:
+			for i, v := range n {
+				checkPatterns(v, fmt.Sprintf("%s[%d]", path, i))
+			}
+		}
+	}
+	checkPatterns(parsedSchema, "$")
 
 	// Escape backticks in the JSON payload so we can embed it inside a raw string literal
 	schemaString := bytes.ReplaceAll(schemaBytes, []byte("`"), []byte("`+\"`\"+`"))
@@ -45,7 +84,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 )
 
 // SchemaJSON contains the fully resolved uCentral JSON schema
@@ -260,11 +298,11 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 
 	// 4. String validation
 	if str, ok := v.(string); ok {
-		runeCount := utf8.RuneCountInString(str)
-		if s.MinLength != nil && runeCount < *s.MinLength {
+		strLen := utf16Length(str)
+		if s.MinLength != nil && strLen < *s.MinLength {
 			errs = append(errs, fmt.Sprintf("%%s: length must be >= %%d", path, *s.MinLength))
 		}
-		if s.MaxLength != nil && runeCount > *s.MaxLength {
+		if s.MaxLength != nil && strLen > *s.MaxLength {
 			errs = append(errs, fmt.Sprintf("%%s: length must be <= %%d", path, *s.MaxLength))
 		}
 		if s.Pattern != "" {
@@ -562,6 +600,17 @@ func isEqual(a, b interface{}) bool {
 	return false
 }
 
+func utf16Length(s string) int {
+	length := 0
+	for _, r := range s {
+		if r > 0xffff {
+			length += 2
+		} else {
+			length++
+		}
+	}
+	return length
+}
 `, schemaString)
 
 	formattedCode, err := format.Source([]byte(goCode))

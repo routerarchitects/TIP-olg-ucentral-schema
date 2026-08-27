@@ -96,7 +96,7 @@ The Go validator implements a custom JSON Schema Draft-07 engine designed specif
 * **Types**: `type` (strict validation for `string`, `integer`, `number`, `boolean`, `object`, `array`, `null`)
 * **Objects**: `properties`, `patternProperties`, `required`, `additionalProperties` (boolean `false`/`true`), `minProperties`, `maxProperties`, `propertyNames`
 * **Arrays**: `items`, `minItems`, `maxItems`
-* **Strings**: `minLength`, `maxLength`, `pattern` (regular expressions), `format` (see custom formats below)
+* **Strings**: `minLength`, `maxLength`, `pattern` (Go RE2-compatible regular expressions), `format` (see custom formats below)
 * **Numbers**: `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`
 * **Composed**: `oneOf`, `anyOf`, `allOf`
 * **Values**: `enum`, `const`

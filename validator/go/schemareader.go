@@ -13,7 +13,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 )
 
 // SchemaJSON contains the fully resolved uCentral JSON schema
@@ -5930,11 +5929,11 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 
 	// 4. String validation
 	if str, ok := v.(string); ok {
-		runeCount := utf8.RuneCountInString(str)
-		if s.MinLength != nil && runeCount < *s.MinLength {
+		strLen := utf16Length(str)
+		if s.MinLength != nil && strLen < *s.MinLength {
 			errs = append(errs, fmt.Sprintf("%s: length must be >= %d", path, *s.MinLength))
 		}
-		if s.MaxLength != nil && runeCount > *s.MaxLength {
+		if s.MaxLength != nil && strLen > *s.MaxLength {
 			errs = append(errs, fmt.Sprintf("%s: length must be <= %d", path, *s.MaxLength))
 		}
 		if s.Pattern != "" {
@@ -6230,4 +6229,16 @@ func isEqual(a, b interface{}) bool {
 		}
 	}
 	return false
+}
+
+func utf16Length(s string) int {
+	length := 0
+	for _, r := range s {
+		if r > 0xffff {
+			length += 2
+		} else {
+			length++
+		}
+	}
+	return length
 }

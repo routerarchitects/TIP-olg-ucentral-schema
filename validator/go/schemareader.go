@@ -5980,8 +5980,11 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 		if s.ExclusiveMaximum != nil && num >= *s.ExclusiveMaximum {
 			errs = append(errs, fmt.Sprintf("%s: must be < %v", path, *s.ExclusiveMaximum))
 		}
-		if s.MultipleOf != nil && math.Mod(num, *s.MultipleOf) != 0 {
-			errs = append(errs, fmt.Sprintf("%s: must be a multiple of %v", path, *s.MultipleOf))
+		if s.MultipleOf != nil {
+			div := num / *s.MultipleOf
+			if math.Abs(div-math.Round(div)) > 1e-9 {
+				errs = append(errs, fmt.Sprintf("%s: must be a multiple of %v", path, *s.MultipleOf))
+			}
 		}
 	}
 

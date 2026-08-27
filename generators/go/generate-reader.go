@@ -30,11 +30,28 @@ func main() {
 		log.Fatalf("Failed to parse schema for pattern validation: %v", err)
 	}
 
-	var checkPatterns func(node interface{}, path string)
-	checkPatterns = func(node interface{}, path string) {
+	supportedFormats := map[string]bool{
+		"ipv4": true, "ipv6": true, "uc-ip": true, "uc-mac": true,
+		"uc-timeout": true, "uc-portrange": true, "uc-cidr4": true, "uc-cidr6": true,
+		"hostname": true, "uc-cidr": true, "uc-mobility": true, "uc-base64": true,
+		"uc-fqdn": true, "uc-host": true, "uri": true,
+	}
+
+	var validateSchema func(node interface{}, path string)
+	validateSchema = func(node interface{}, path string) {
 		switch n := node.(type) {
 		case map[string]interface{}:
 			for k, v := range n {
+				if k == "$ref" {
+					log.Fatalf("Error: JSON Schema contains unresolved reference %q at %s. Go generator requires fully dereferenced schemas.", v, path)
+				}
+				if k == "format" {
+					if formatStr, ok := v.(string); ok {
+						if !supportedFormats[formatStr] {
+							log.Fatalf("Error: JSON Schema contains unsupported format %q at %s. Please implement it in generate-reader.go.", formatStr, path)
+						}
+					}
+				}
 				if k == "pattern" {
 					if patStr, ok := v.(string); ok {
 						if _, err := regexp.Compile(patStr); err != nil {
@@ -51,15 +68,15 @@ func main() {
 						}
 					}
 				}
-				checkPatterns(v, path+"."+k)
+				validateSchema(v, path+"."+k)
 			}
 		case []interface{}:
 			for i, v := range n {
-				checkPatterns(v, fmt.Sprintf("%s[%d]", path, i))
+				validateSchema(v, fmt.Sprintf("%s[%d]", path, i))
 			}
 		}
 	}
-	checkPatterns(parsedSchema, "$")
+	validateSchema(parsedSchema, "$")
 
 	// Escape backticks in the JSON payload so we can embed it inside a raw string literal
 	schemaString := bytes.ReplaceAll(schemaBytes, []byte("`"), []byte("`+\"`\"+`"))
@@ -349,8 +366,11 @@ func validateNode(s *Schema, v interface{}, path string) []string {
 		if s.ExclusiveMaximum != nil && num >= *s.ExclusiveMaximum {
 			errs = append(errs, fmt.Sprintf("%%s: must be < %%v", path, *s.ExclusiveMaximum))
 		}
-		if s.MultipleOf != nil && math.Mod(num, *s.MultipleOf) != 0 {
-			errs = append(errs, fmt.Sprintf("%%s: must be a multiple of %%v", path, *s.MultipleOf))
+		if s.MultipleOf != nil {
+			div := num / *s.MultipleOf
+			if math.Abs(div-math.Round(div)) > 1e-9 {
+				errs = append(errs, fmt.Sprintf("%%s: must be a multiple of %%v", path, *s.MultipleOf))
+			}
 		}
 	}
 
